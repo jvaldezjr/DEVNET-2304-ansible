@@ -1,0 +1,76 @@
+---
+# List dashboard administrators for a Meraki organization.
+#
+# Note: cisco.meraki.organizations_admins is the resource module for
+# create/update/delete (state: present|absent). Read-only listing uses the
+# companion cisco.meraki.organizations_admins_info module.
+- name: List Meraki organization administrators
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  # Play-level vars are required for Ansible 2.20+ task-arg finalization on
+  # action plugins (e.g. cisco.meraki.*); host/group vars alone are not in scope yet.
+  vars_files:
+    - "{{ playbook_dir }}/../inventory/group_vars/all.yml"
+
+  vars:
+    meraki_api_key: "{{ lookup('env', 'MERAKI_DASHBOARD_API_KEY') }}"
+
+  pre_tasks:
+    - name: Require Meraki API key
+      ansible.builtin.assert:
+        that:
+          - meraki_api_key | length > 0
+        fail_msg: >-
+          Set MERAKI_DASHBOARD_API_KEY via op run --env-file=.env.op (see README),
+          export it in your shell, or pass -e meraki_api_key=... when running the playbook.
+
+  tasks:
+    - name: Get organization administrators
+      cisco.meraki.organizations_admins_info:
+        meraki_api_key: "{{ meraki_api_key }}"
+        organizationId: "{{ meraki_organization_id }}"
+      register: organization_admins
+
+    - name: Compute inactive cutoff timestamp
+      ansible.builtin.set_fact:
+        inactive_cutoff: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime((now(fmt='%s') | int) - (inactive_days_threshold * 86400)) }}"
+
+    - name: Select inactive organization administrators
+      ansible.builtin.set_fact:
+        inactive_organization_admins: >-
+          {{
+            (
+              organization_admins.meraki_response
+              | selectattr('lastActive', 'none')
+              | list
+            )
+            + (
+              organization_admins.meraki_response
+              | rejectattr('lastActive', 'none')
+              | selectattr('lastActive', 'lt', inactive_cutoff)
+              | list
+            )
+          }}
+
+    - name: Report inactive administrator count
+      ansible.builtin.debug:
+        msg: >-
+          Found {{ inactive_organization_admins | length }} inactive administrator(s)
+          (no lastActive or last active before {{ inactive_cutoff }}).
+      when: organization_admins.meraki_response | length > 0
+
+    - name: List inactive organization administrators
+      ansible.builtin.debug:
+        msg: >-
+          {{ item.name }} ({{ item.email }}) —
+          last active: {{ item.lastActive | default('never', true) }}
+      loop: "{{ inactive_organization_admins }}"
+      loop_control:
+        label: "{{ item.email }}"
+
+    - name: Show inactive administrator records
+      ansible.builtin.debug:
+        var: inactive_organization_admins
+      when: inactive_organization_admins | length > 0
