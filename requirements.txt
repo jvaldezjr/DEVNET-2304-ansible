@@ -1,0 +1,3 @@
+# Python packages for Meraki Ansible action plugins (cisco.meraki.*).
+# Install into the same Python environment Semaphore uses to run ansible-playbook.
+meraki>=2.4.9

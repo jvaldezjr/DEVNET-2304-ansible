@@ -1,29 +1,31 @@
 ---
-# Identify inactive full-access Meraki org admins and downgrade orgAccess.
+# Audit full-access org admins for inactivity and downgrade orgAccess.
 #
-# Listing uses cisco.meraki.organizations_admins_info.
-# Updates use cisco.meraki.organizations_admins (state: present).
-- name: List Meraki organization administrators
+# Listing: cisco.meraki.organizations_admins_info
+# Updates: cisco.meraki.organizations_admins (state: present)
+- name: Audit inactive full-access Meraki org admins and downgrade orgAccess
   hosts: localhost
   connection: local
   gather_facts: false
 
-  # Play-level vars are required for Ansible 2.20+ task-arg finalization on
-  # action plugins (e.g. cisco.meraki.*); host/group vars alone are not in scope yet.
+  # Play-level vars required for Ansible 2.20+ task-arg finalization on Meraki action plugins.
   vars_files:
     - "{{ playbook_dir }}/../inventory/group_vars/all.yml"
 
   vars:
     meraki_api_key: "{{ lookup('env', 'MERAKI_DASHBOARD_API_KEY') }}"
+    meraki_organization_id: "{{ lookup('env', 'MERAKI_ORGANIZATION_ID') }}"
 
   pre_tasks:
-    - name: Require Meraki API key
+    - name: Require Meraki credentials from environment
       ansible.builtin.assert:
         that:
           - meraki_api_key | length > 0
+          - meraki_organization_id | length > 0
         fail_msg: >-
-          Set MERAKI_DASHBOARD_API_KEY via op run --env-file=.env.op (see README),
-          export it in your shell, or pass -e meraki_api_key=... when running the playbook.
+          Set MERAKI_DASHBOARD_API_KEY and MERAKI_ORGANIZATION_ID via
+          op run --env-file=.env.op (see README), export them in your shell,
+          or pass -e for each variable when running the playbook.
 
   tasks:
     - name: Get organization administrators

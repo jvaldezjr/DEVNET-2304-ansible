@@ -1,7 +1,6 @@
 ---
-# Static Meraki settings for local development.
-# API key: inject via op run --env-file=.env.op (see README).
-meraki_organization_id: "383667"
+# Non-secret playbook defaults (thresholds and target access level).
+# Secrets and org ID: set MERAKI_DASHBOARD_API_KEY and MERAKI_ORGANIZATION_ID in the environment.
 
 # Admins with null lastActive or lastActive older than this many days are inactive.
 inactive_days_threshold: 90

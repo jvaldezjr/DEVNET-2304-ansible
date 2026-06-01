@@ -6,8 +6,8 @@ Ansible playbooks for Meraki Dashboard automation using the [Cisco Meraki Ansibl
 
 - Ansible 2.15+
 - Python 3.8+
-- [1Password CLI](https://developer.1password.com/docs/cli/) (`op`)
-- Meraki Dashboard API key stored in 1Password
+- [1Password CLI](https://developer.1password.com/docs/cli/) (`op`) for local runs
+- Meraki Dashboard API key (and organization ID) available as environment variables
 
 Install the collection and Python SDK:
 
@@ -18,36 +18,53 @@ pip install "meraki>=2.4.9"
 
 ## Configuration
 
-1. Copy `.env.op.example` to `.env.op` and set your `op://` secret reference for `MERAKI_DASHBOARD_API_KEY`.
-2. Update the organization ID in `inventory/group_vars/all.yml`:
+Copy `.env.op.example` to `.env.op` and set:
 
-```yaml
-meraki_organization_id: "your-organization-id"
-```
+| Variable | Description |
+|----------|-------------|
+| `MERAKI_DASHBOARD_API_KEY` | API key (`op://` secret reference or plain value) |
+| `MERAKI_ORGANIZATION_ID` | Target organization ID (plain value is fine) |
 
-The `.env.op.example` file also sets `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` for macOS ([Meraki Ansible docs](https://developer.cisco.com/codeexchange/github/repo/meraki/dashboard-api-ansible/)). Add that line to your `.env.op` if you copied an older example.
+Thresholds (`inactive_days_threshold`, `inactive_admin_target_org_access`) stay in `inventory/group_vars/all.yml`.
+
+The `.env.op.example` file also sets `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` for macOS ([Meraki Ansible docs](https://developer.cisco.com/codeexchange/github/repo/meraki/dashboard-api-ansible/)).
+
+### Environment variables and `op run`
+
+The playbook reads secrets with `lookup('env', 'MERAKI_…')`. That works with:
+
+- **`op run --env-file=.env.op`** — 1Password resolves `op://` references, then starts `ansible-playbook` with those variables in the process environment.
+- **Semaphore** — set the same variable names in the task template (Key Store for the API key).
+- **Plain export** — `export MERAKI_DASHBOARD_API_KEY=…` and `export MERAKI_ORGANIZATION_ID=…`
+
+Yes, the API key should be an environment variable (not in Git). The org ID can be env-only too so you can target different orgs without changing committed files.
 
 ## Run playbooks
 
-From this directory, use `--` so `op run` passes arguments to Ansible correctly:
+From this directory:
 
 ```bash
-op run --account runsushiesrun.1password.com --env-file=.env.op -- ansible-playbook playbooks/list-organization-admins.yml
+op run --account runsushiesrun.1password.com --env-file=.env.op -- ansible-playbook playbooks/downgrade-inactive-full-admins.yml
 ```
 
-Or use the helper script (same behavior, reads `.env.op` from project root):
+Or use the helper script:
 
 ```bash
 chmod +x scripts/run-playbook.sh   # once
-./scripts/run-playbook.sh playbooks/list-organization-admins.yml
+./scripts/run-playbook.sh playbooks/downgrade-inactive-full-admins.yml
 ```
 
-## List organization administrators
+## Downgrade inactive full-access org admins
 
-The `cisco.meraki.organizations_admins` module manages administrators (create, update, delete). To **list** admins, use the companion `cisco.meraki.organizations_admins_info` module — see `playbooks/list-organization-admins.yml`.
+`playbooks/downgrade-inactive-full-admins.yml` lists org admins, finds **full** `orgAccess` admins with no `lastActive` or last active ≥ `inactive_days_threshold` days (default 90), and downgrades them to `read-only` (configurable) via `cisco.meraki.organizations_admins`.
 
-```bash
-op run --env-file=.env.op -- ansible-playbook playbooks/list-organization-admins.yml
-```
+## Semaphore UI (EC2 / manual install)
 
-Admin data is returned in `organization_admins.meraki_response`. Inactive **full-access** admins (null `lastActive` or inactive for `inactive_days_threshold` days, default 90) are downgraded to `inactive_admin_target_org_access` (default `read-only`) via `cisco.meraki.organizations_admins`.
+Semaphore runs `ansible-playbook` in its own Python environment. Install `meraki` and the `cisco.meraki` collection for the user that actually runs tasks (see [manual install troubleshooting](https://semaphoreui.com/docs/admin-guide/installation_manually)) — not necessarily a `semaphore` user if your AMI uses another account.
+
+In the **task template**:
+
+- Playbook path: `playbooks/downgrade-inactive-full-admins.yml`
+- Environment variables: `MERAKI_DASHBOARD_API_KEY`, `MERAKI_ORGANIZATION_ID`
+
+The `/etc/semaphore/requirements.txt` path is for [Docker installs only](https://semaphoreui.com/docs/admin-guide/installation#installing-additional-python-packages).
