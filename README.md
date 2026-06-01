@@ -50,4 +50,4 @@ The `cisco.meraki.organizations_admins` module manages administrators (create, u
 op run --env-file=.env.op -- ansible-playbook playbooks/list-organization-admins.yml
 ```
 
-Admin data is returned in `organization_admins.meraki_response`. Inactive admins (null `lastActive` or inactive for `inactive_days_threshold` days, default 90) are stored in the `inactive_organization_admins` fact for use in later tasks.
+Admin data is returned in `organization_admins.meraki_response`. Inactive **full-access** admins (null `lastActive` or inactive for `inactive_days_threshold` days, default 90) are downgraded to `inactive_admin_target_org_access` (default `read-only`) via `cisco.meraki.organizations_admins`.

@@ -1,9 +1,8 @@
 ---
-# List dashboard administrators for a Meraki organization.
+# Identify inactive full-access Meraki org admins and downgrade orgAccess.
 #
-# Note: cisco.meraki.organizations_admins is the resource module for
-# create/update/delete (state: present|absent). Read-only listing uses the
-# companion cisco.meraki.organizations_admins_info module.
+# Listing uses cisco.meraki.organizations_admins_info.
+# Updates use cisco.meraki.organizations_admins (state: present).
 - name: List Meraki organization administrators
   hosts: localhost
   connection: local
@@ -37,17 +36,26 @@
       ansible.builtin.set_fact:
         inactive_cutoff: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime((now(fmt='%s') | int) - (inactive_days_threshold * 86400)) }}"
 
+    - name: Select organization administrators with full org access
+      ansible.builtin.set_fact:
+        full_organization_admins: >-
+          {{
+            organization_admins.meraki_response
+            | selectattr('orgAccess', 'equalto', 'full')
+            | list
+          }}
+
     - name: Select inactive organization administrators
       ansible.builtin.set_fact:
         inactive_organization_admins: >-
           {{
             (
-              organization_admins.meraki_response
+              full_organization_admins
               | selectattr('lastActive', 'none')
               | list
             )
             + (
-              organization_admins.meraki_response
+              full_organization_admins
               | rejectattr('lastActive', 'none')
               | selectattr('lastActive', 'lt', inactive_cutoff)
               | list
@@ -57,9 +65,9 @@
     - name: Report inactive administrator count
       ansible.builtin.debug:
         msg: >-
-          Found {{ inactive_organization_admins | length }} inactive administrator(s)
+          Found {{ inactive_organization_admins | length }} inactive full-access administrator(s)
           (no lastActive or last active before {{ inactive_cutoff }}).
-      when: organization_admins.meraki_response | length > 0
+      when: full_organization_admins | length > 0
 
     - name: List inactive organization administrators
       ansible.builtin.debug:
@@ -74,3 +82,32 @@
       ansible.builtin.debug:
         var: inactive_organization_admins
       when: inactive_organization_admins | length > 0
+
+    - name: Downgrade inactive full-access administrators
+      cisco.meraki.organizations_admins:
+        meraki_api_key: "{{ meraki_api_key }}"
+        organizationId: "{{ meraki_organization_id }}"
+        adminId: "{{ item.id }}"
+        name: "{{ item.name }}"
+        orgAccess: "{{ inactive_admin_target_org_access }}"
+        tags: "{{ item.tags | default([], true) }}"
+        networks: "{{ item.networks | default([], true) }}"
+        state: present
+      loop: "{{ inactive_organization_admins }}"
+      loop_control:
+        label: "{{ item.email }}"
+      register: inactive_admin_updates
+      when: inactive_organization_admins | length > 0
+
+    - name: Report administrator downgrades
+      ansible.builtin.debug:
+        msg: >-
+          Updated {{ item.item.name }} ({{ item.item.email }}) —
+          orgAccess set to {{ inactive_admin_target_org_access }}
+      loop: "{{ inactive_admin_updates.results }}"
+      loop_control:
+        label: "{{ item.item.email }}"
+      when:
+        - inactive_organization_admins | length > 0
+        - not item.skipped | default(false)
+        - item.changed | default(false)

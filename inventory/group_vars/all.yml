@@ -5,3 +5,6 @@ meraki_organization_id: "383667"
 
 # Admins with null lastActive or lastActive older than this many days are inactive.
 inactive_days_threshold: 90
+
+# orgAccess applied to inactive full-access administrators.
+inactive_admin_target_org_access: read-only
